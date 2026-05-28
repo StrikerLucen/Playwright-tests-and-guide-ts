@@ -1,3 +1,5 @@
+
+# Remove the ".example" suffix from the filename to use this workflow.
 # ─────────────────────────────────────────────────────────────────────────────
 # GitHub Actions CI Workflow
 # ─────────────────────────────────────────────────────────────────────────────

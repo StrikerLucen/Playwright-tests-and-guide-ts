@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Actions CI Workflow
+# ─────────────────────────────────────────────────────────────────────────────
+# What is GitHub Actions?
+#   A CI/CD platform built into GitHub. Workflows are YAML files that define
+#   automated pipelines. They run on GitHub's cloud servers (called "runners")
+#   in response to events like pushing code or opening a pull request.
+#
+# Why CI for test automation?
+#   Tests that only run on a developer's laptop provide weak safety guarantees.
+#   CI ensures tests run on every code change in a clean, reproducible
+#   environment — catching regressions before they reach main.
+#
+# Workflow anatomy:
+#   name     → label shown in the GitHub Actions UI
+#   on       → events that trigger this workflow
+#   jobs     → parallel units of work (we have one: "test")
+#   steps    → sequential commands within a job
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+# Trigger on pushes and pull requests targeting main/master.
+# This covers two scenarios:
+#   1. A developer pushes a feature branch and opens a PR → tests run as a check.
+#   2. The PR is merged → tests run again on main to confirm the merge is clean.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    # ubuntu-latest is the standard CI runner for web automation.
+    # It includes Chrome, Node.js, and all Playwright system dependencies.
+    runs-on: ubuntu-latest
+
+    # Set the default working directory for all `run` steps.
+    # This avoids prefixing every command with `cd playwright &&`.
+    defaults:
+      run:
+        working-directory: playwright
+
+    steps:
+      # ── 1. Get the code ───────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        # Checks out the repository so the runner has access to all files.
+        # @v4 pins to a specific major version for reproducibility.
+
+      # ── 2. Set up Node.js ─────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"           # LTS version; matches local dev environment
+          cache: "npm"                 # caches the npm package cache between runs
+          cache-dependency-path: playwright/package-lock.json
+
+      # ── 3. Install npm dependencies ───────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+        # `npm ci` (clean install) is preferred over `npm install` in CI because:
+        #   • It installs exactly what is in package-lock.json (reproducible).
+        #   • It deletes node_modules before installing (no stale packages).
+        #   • It fails if package-lock.json is out of sync with package.json.
+
+      # ── 4. Install Playwright browser binaries ────────────────────────────
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        # Playwright browsers are NOT bundled with the npm package — they are
+        # downloaded separately. `--with-deps` also installs the OS-level
+        # libraries (fonts, codecs) that Chromium needs on Ubuntu.
+        # We install only Chromium to keep CI fast; add firefox/webkit as needed.
+
+      # ── 5. Run the test suite ─────────────────────────────────────────────
+      - name: Run Playwright tests
+        run: npx playwright test
+        # Playwright respects the config in playwright.config.ts:
+        #   • forbidOnly: true  → fails if any test.only() was left in
+        #   • retries: 2        → retries flaky tests twice before failing
+        #   • workers: 2        → limits parallelism on the shared runner
+
+      # ── 6. Upload Allure results as a build artifact ──────────────────────
+      - name: Upload Allure results
+        # `if: always()` means this step runs even when tests fail.
+        # Without it, a test failure would skip the upload and you'd have
+        # no report to investigate the failure with.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: playwright/allure-results/
+          # Keep artifacts for 30 days. Older runs are auto-deleted to save storage.
+          retention-days: 30
+        # To view the report:
+        #   1. Go to the workflow run in GitHub → Artifacts → download allure-results.zip
+        #   2. Unzip it and run: allure generate allure-results -o allure-report
+        #   3. Open allure-report/index.html in a browser.
+        #   Alternatively, deploy with: allure open allure-report

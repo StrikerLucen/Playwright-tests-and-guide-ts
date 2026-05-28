@@ -1,0 +1,12 @@
+# Playwright
+playwright/node_modules/
+playwright/allure-results/
+playwright/allure-report/
+playwright/playwright-report/
+playwright/test-results/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
